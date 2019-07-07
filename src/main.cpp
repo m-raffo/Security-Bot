@@ -3,6 +3,7 @@
 #include <QTRSensors.h>
 #include "FastLED.h"
 #include "NewPing.h"
+#include "utility/MPU9250.h"
 
 // Define led constants
 #define NEOPIXEL_PIN 1
@@ -12,6 +13,9 @@
 #define TRIGGER_PIN  26
 #define ECHO_PIN     13
 #define MAX_DISTANCE 200
+
+// Define IMU variables
+MPU9250 IMU;
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
@@ -25,6 +29,7 @@ CRGB leds[NUM_LEDS];
 
 // Function prototypes
 boolean performChecks();
+boolean arrayCompare(int *a, int *b, int len_a, int len_b);
 
 void setup() {
 
@@ -39,6 +44,15 @@ void setup() {
   qtr.setTypeRC();
   qtr.setSensorPins((const uint8_t[]){2, 5, 15}, qtrSensorCount);
   delay(1000);
+
+  // Initialize, test and calibrate MPU sensor
+  Wire.begin();
+
+  IMU.MPU9250SelfTest(IMU.SelfTest);
+  IMU.calibrateMPU9250(IMU.gyroBias, IMU.accelBias);
+  IMU.initMPU9250();
+  IMU.initAK8963(IMU.magCalibration);
+
 
   M5.Lcd.clear(BLACK);
 
@@ -68,7 +82,7 @@ void setup() {
   } else {
     // Play fail sound here
 
-    FastLED.setBrightness(25);
+    FastLED.setBrightness(50);
     for(;;) {  // Infinite loop
 
       // Flash red lights
@@ -107,12 +121,17 @@ void loop() {
  * This function checks the following functions:
  *   QTR Sensor
  *   Ultrasonic Sensor
+ *   Accelerometer
+ *   Gyroscope
+ *
+ * Magnetometer is not tested (assumed if accel and gyro is functional, mag is too)
  *
  * Sample output error message:
 
      Sensor tests:
      QTR - [SUCCESS] - (60, 49, 54)
      Ultrasonic - [FAIL] - (0.0000000000)
+     ...
 
  * @return true if all checks good, false if not
  */
@@ -125,6 +144,15 @@ boolean performChecks() {
 
   boolean sonicStatus = true;
   int sonicValue;
+
+  boolean accelStatus = true;
+  int accelValues1[3];
+  int accelValues2[3];
+
+  boolean gyroStatus = true;
+  int gyroValues1[3];
+  int gyroValues2[3];
+
 
   // Get line sensor values
   qtr.read(qtrValues);
@@ -141,6 +169,68 @@ boolean performChecks() {
     allGood = false;
     sonicStatus = false;
   }
+
+
+  // Accel and gyro tests
+  // Note: if the sensor is not connected, it will return random, but constant values
+
+  IMU.readAccelData(IMU.accelCount);
+  IMU.readGyroData(IMU.gyroCount);
+
+
+  // memcpy(accelValues1, IMU.accelCount, sizeof(IMU.accelCount));
+
+  // Save accel values
+  accelValues1[0] = IMU.accelCount[0];
+  accelValues1[1] = IMU.accelCount[1];
+  accelValues1[2] = IMU.accelCount[2];
+
+  // Save gyro values
+  gyroValues1[0] = IMU.gyroCount[0];
+  gyroValues1[1] = IMU.gyroCount[1];
+  gyroValues1[2] = IMU.gyroCount[2];
+
+  delay(250);
+
+  IMU.readAccelData(IMU.accelCount);
+  IMU.readGyroData(IMU.gyroCount);
+  
+
+  accelValues2[0] = IMU.accelCount[0];
+  accelValues2[1] = IMU.accelCount[1];
+  accelValues2[2] = IMU.accelCount[2];
+
+  gyroValues2[0] = IMU.gyroCount[0];
+  gyroValues2[1] = IMU.gyroCount[1];
+  gyroValues2[2] = IMU.gyroCount[2];
+
+  if (arrayCompare(accelValues1, accelValues2, 3, 3)) {
+    allGood = false;
+    accelStatus = false;
+  }
+
+  if (arrayCompare(gyroValues1, gyroValues2, 3, 3)) {
+    allGood = false;
+    gyroStatus = false;
+  }
+
+  if (arrayCompare(accelValues1, gyroValues1, 3, 3) || arrayCompare(accelValues2, gyroValues2, 3, 3)) {
+    allGood = false;
+    gyroStatus = false;
+    accelStatus = false;
+  }
+
+
+
+  // Display values as recorded, only for debugging
+  // M5.Lcd.clear(BLACK);
+  //
+  // M5.Lcd.setCursor(0,20); M5.Lcd.print("     x       y       z ");
+  // M5.Lcd.setCursor(0,40); M5.Lcd.printf("acc %6d %6d %6d  mg", accelValues1[0], accelValues1[1], accelValues1[2]);
+  // M5.Lcd.setCursor(0,60); M5.Lcd.printf("acc %6d %6d %6d  mg", IMU.accelCount[0], IMU.accelCount[1], IMU.accelCount[2]);
+  //
+  // delay(5000);
+
 
 
   // Display test results
@@ -175,6 +265,43 @@ boolean performChecks() {
   M5.Lcd.setTextColor(WHITE, BLACK);
   M5.Lcd.printf("] - (%d)\n", sonicValue);
 
+  // Print accel sensor results
+  M5.Lcd.print("Accel - [");
+  if(accelStatus) {
+    M5.Lcd.setTextColor(GREEN, BLACK);
+    M5.Lcd.print("SUCCESS");
+
+  } else {
+    M5.Lcd.setTextColor(RED, BLACK);
+    M5.Lcd.print("FAIL");
+  }
+
+  M5.Lcd.setTextColor(WHITE, BLACK);
+  M5.Lcd.printf("] - (%d, %d, %d) (%d, %d, %d)\n", accelValues1[0], accelValues1[1], accelValues1[2], accelValues2[0], accelValues2[1], accelValues2[2]);
+
+  // Print gyro sensor results
+  M5.Lcd.print("Gyro - [");
+  if(gyroStatus) {
+    M5.Lcd.setTextColor(GREEN, BLACK);
+    M5.Lcd.print("SUCCESS");
+
+  } else {
+    M5.Lcd.setTextColor(RED, BLACK);
+    M5.Lcd.print("FAIL");
+  }
+
+  M5.Lcd.setTextColor(WHITE, BLACK);
+  M5.Lcd.printf("] - (%d, %d, %d) (%d, %d, %d)\n", gyroValues1[0], gyroValues1[1], gyroValues1[2], gyroValues2[0], gyroValues2[1], gyroValues2[2]);
+
 
   return allGood;
+}
+
+boolean arrayCompare(int *a, int *b, int len_a, int len_b){
+     int n;
+     // if their lengths are different, return false
+     if (len_a != len_b) return false;
+     // test each element to be the same. if not, return false
+     for (n=0;n<len_a;n++) if (a[n]!=b[n]) return false;
+     return true;
 }
