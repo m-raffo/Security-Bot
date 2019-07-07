@@ -10,15 +10,15 @@
 #define NEOPIXEL_PIN 1
 #define NUM_LEDS 7
 
-// Define ultrasonic sensor constants
+// Define ultrasonic sensor constants and variables
 #define TRIGGER_PIN  26
 #define ECHO_PIN     13
 #define MAX_DISTANCE 200
 
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
+
 // Define IMU variables
 MPU9250 IMU;
-
-NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
 // Define QTR sensor variables
 QTRSensors qtr;
@@ -62,7 +62,6 @@ void setup() {
   boolean systemChecks = performChecks();
 
   if(systemChecks) {
-    // Play success sound here
 
     // Fancy green leds
     for(int i = 0; i < 7; i++) {
@@ -85,20 +84,64 @@ void setup() {
   } else {
     // Play fail sound here
 
+    boolean wait = true;
+
+    M5.Lcd.setCursor(35, 220);
+    M5.Lcd.println("Press 'A' to continue with program launch");
+
     FastLED.setBrightness(50);
-    for(;;) {  // Infinite loop
 
+    while (wait) {  // Wait until button press
       // Flash red lights
-      fill_solid(leds, NUM_LEDS, CRGB::Red);
-      FastLED.show();
-      delay(250);
+      if(millis() % 500 > 250) {
+        fill_solid(leds, NUM_LEDS, CRGB::Red);
+      } else {
+        fill_solid(leds, NUM_LEDS, CRGB::Black);
+      }
 
-      fill_solid(leds, NUM_LEDS, CRGB::Black);
       FastLED.show();
-      delay(250);
 
+      M5.update();
+      if(M5.BtnA.wasReleased()) {
+        wait = false;
+      }
     }
+
+    M5.Lcd.clear(BLACK);
+
+    delay(100);
+
   }
+
+  M5.Lcd.setCursor(35, 20);
+  M5.Lcd.println("Line sensor calibration: 'A' to begin");
+
+  M5.update();
+  boolean wait = true;
+  while(wait) {
+    M5.update();
+    wait = !M5.BtnA.wasReleased();
+  }
+
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(35, 20);
+  M5.Lcd.println("Calibrating now...");
+  float percent = 0;
+  for (uint8_t i = 0; i < 250; i++) {
+    percent += 100.0 / 250.0;
+    M5.Lcd.setCursor(35, 40);
+    M5.Lcd.printf("%d%%", (int) percent);
+
+
+    qtr.calibrate();
+    delay(20);
+  }
+
+  M5.Lcd.clear(BLUE);
+  delay(250);
+  M5.Lcd.clear(BLACK);
+
+
 }
 
 void loop() {
@@ -109,7 +152,17 @@ void loop() {
   // Display sonar pings
   // M5.Lcd.clear(BLACK);
   M5.Lcd.setCursor(10, 10);
-  M5.Lcd.printf("%03d", sonar.ping_cm());
+  M5.Lcd.printf("%03d", (int) sonar.ping_cm());
+
+  M5.Lcd.setCursor(0,25);
+  M5.Lcd.println("  3    2    1");
+  M5.Lcd.printf( "%4d %4d %4d", lineSensorValues[2], lineSensorValues[1], lineSensorValues[0]);
+
+  int linePosition = qtr.readLineBlack(lineSensorValues);
+  M5.Lcd.setCursor(0,40);
+  M5.Lcd.println(" Line: ");
+  M5.Lcd.printf( "%4d ", linePosition);
+
 
   delay(50);
 
@@ -188,9 +241,6 @@ boolean performChecks() {
 
   IMU.readAccelData(IMU.accelCount);
   IMU.readGyroData(IMU.gyroCount);
-
-
-  // memcpy(accelValues1, IMU.accelCount, sizeof(IMU.accelCount));
 
   // Save accel values
   accelValues1[0] = IMU.accelCount[0];
