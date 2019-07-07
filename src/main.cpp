@@ -4,6 +4,7 @@
 #include "FastLED.h"
 #include "NewPing.h"
 #include "utility/MPU9250.h"
+#include "Drive.h"
 
 // Define led constants
 #define NEOPIXEL_PIN 1
@@ -35,10 +36,12 @@ void setup() {
 
   M5.begin();
 
+  // Initialize motor control
+  Serial2.begin(115200, SERIAL_8N1, 16, 17);
+
   // Initialize the LEDS
   FastLED.addLeds<WS2811,NEOPIXEL_PIN,RGB>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
   FastLED.clear();
-
 
   // Initialize the line sensor
   qtr.setTypeRC();
@@ -153,6 +156,15 @@ boolean performChecks() {
   int gyroValues1[3];
   int gyroValues2[3];
 
+  // OPTIONAL: Uncomment to test leds with a rainbow gradient
+  // for(int i = 0; i < 7; i++) {
+  //   for (int colorIndex = 0; colorIndex < 255; colorIndex += 4) {
+  //     leds[i] = ColorFromPalette( RainbowColors_p, colorIndex);
+  //     FastLED.show();
+  //   }
+  //
+  //   leds[i] = CRGB::Black;
+  // }
 
   // Get line sensor values
   qtr.read(qtrValues);
@@ -194,7 +206,7 @@ boolean performChecks() {
 
   IMU.readAccelData(IMU.accelCount);
   IMU.readGyroData(IMU.gyroCount);
-  
+
 
   accelValues2[0] = IMU.accelCount[0];
   accelValues2[1] = IMU.accelCount[1];
@@ -220,22 +232,14 @@ boolean performChecks() {
     accelStatus = false;
   }
 
-
-
-  // Display values as recorded, only for debugging
-  // M5.Lcd.clear(BLACK);
-  //
-  // M5.Lcd.setCursor(0,20); M5.Lcd.print("     x       y       z ");
-  // M5.Lcd.setCursor(0,40); M5.Lcd.printf("acc %6d %6d %6d  mg", accelValues1[0], accelValues1[1], accelValues1[2]);
-  // M5.Lcd.setCursor(0,60); M5.Lcd.printf("acc %6d %6d %6d  mg", IMU.accelCount[0], IMU.accelCount[1], IMU.accelCount[2]);
-  //
-  // delay(5000);
-
-
+  // Test motors
+  sendDrive(25, 25, 13000);
+  delay(250);
+  sendDrive(-25, -25, 13000);
+  delay(300);
 
   // Display test results
   M5.Lcd.println("Sensor tests:");
-
 
   // Print line sensor results
   M5.Lcd.print("QTR - [");
