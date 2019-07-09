@@ -73,6 +73,18 @@ int movementWaitMillis = 0;
 int movementDuration;
 bool movementInitTaken = false;
 
+/*
+  LED Modes:
+  0 - Off
+  1 - Scanning/search (yellow dot panning across the led strip)
+  2 - Flashing red and blue
+  3 - Left blinker
+  4 - Right blinker
+  5 - Hazard lights (ie both blinkers)
+  6 - Headlights (all on white)
+ */
+int ledMode = 6;
+
 // Patrol path storage structure
 typedef struct {
   // The time (in millis) it takes for the robot to complete this line segment
@@ -216,6 +228,9 @@ void setup() {
   waitForButtonPress("Press A to continue");
 
   state = 1;
+
+  FastLED.setBrightness(100);
+
 
 }
 
@@ -443,6 +458,83 @@ void loop() {
       }
     }
   }
+
+  ////////////////
+  // LED MODES  //
+  ////////////////
+  if (ledMode == 0) {
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+  }
+  else if (ledMode == 1) {
+    // TODO: LED mode 1 is sloppy, clean up if desired
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+
+    int patternDuration = 2000;
+    int time = millis() % patternDuration;
+    if (time < 1000) {
+      for (int i = 0; i < NUM_LEDS; i++) {
+        if (time < (((float)patternDuration / 2.0) / (float)NUM_LEDS) *  (i + 1)) {
+          leds[i] = CRGB::Yellow;
+          break;
+        }
+      }
+    } else {
+      time -= 1000;
+      for (int i = NUM_LEDS - 1; i >= 0; i--) {
+        if (time > (((float)patternDuration / 2.0) / (float)NUM_LEDS) *  (i )) {
+          i = map(i, 0, 6, 6, 0);
+          leds[i] = CRGB::Yellow;
+          break;
+        }
+      }
+    }
+  }
+  else if (ledMode == 2) {
+    if (millis() % 500 < 250) {
+      fill_solid(leds, NUM_LEDS, CRGB::Red);
+      leds[1] = CRGB::Blue;
+      leds[3] = CRGB::Blue;
+      leds[5] = CRGB::Blue;
+      leds[7] = CRGB::Blue;
+    } else {
+      fill_solid(leds, NUM_LEDS, CRGB::Blue);
+      leds[1] = CRGB::Red;
+      leds[3] = CRGB::Red;
+      leds[5] = CRGB::Red;
+      leds[7] = CRGB::Red;
+    }
+  }
+  else if (ledMode == 3) {
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+
+    if(millis() % 1000 < 500) {
+      leds[0] = CRGB::Yellow;
+      leds[1] = CRGB::Yellow;
+    }
+  }
+  else if (ledMode == 4) {
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+
+    if(millis() % 1000 < 500) {
+      leds[6] = CRGB::Yellow;
+      leds[5] = CRGB::Yellow;
+    }
+  }
+  else if (ledMode == 5) {
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+
+    if(millis() % 1000 < 500) {
+      leds[0] = CRGB::Yellow;
+      leds[1] = CRGB::Yellow;
+      leds[6] = CRGB::Yellow;
+      leds[5] = CRGB::Yellow;
+    }
+  }
+  else if (ledMode == 6) {
+    fill_solid(leds, NUM_LEDS, CRGB::White);
+  }
+
+  FastLED.show();
 
 }
 
