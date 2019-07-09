@@ -31,7 +31,7 @@
 #define LINE_THRESHOLD      400
 #define FIND_LINE_DELAY     500
 #define MAX_PATROL_LENGTH   5
-
+#define STATE_CHANGE_DELAY  250
 
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
@@ -69,6 +69,7 @@ int state = 0;
  */
 int movementState = 1;
 int movementStartMillis = 0;
+int movementWaitMillis = 0;
 int movementDuration;
 bool movementInitTaken = false;
 
@@ -101,6 +102,7 @@ boolean performChecks();
 boolean arrayCompare(int *a, int *b, int len_a, int len_b);
 void waitForButtonPress(String);
 void throwError(String);
+void printPatrol();
 
 void setup() {
 
@@ -213,6 +215,8 @@ void setup() {
 
   waitForButtonPress("Press A to continue");
 
+  state = 1;
+
 }
 
 void loop() {
@@ -237,156 +241,205 @@ void loop() {
 
   if (state == 1) {
 
-    // Go straight and correct direction
-    if (movementState == 1) {
-      // If initial measurements are not taken, take them
-      if(!movementInitTaken) {
-        if(patrolIndex >= MAX_PATROL_LENGTH) {
-          throwError("ERROR: Max patrol length reached");
+    if (millis() < movementWaitMillis) {
+      // Stop and wait until the delay time is over
+      sendDrive(0, 0);
+
+    } else {
+
+      // Go straight and correct direction
+      if (movementState == 1) {
+        // If initial measurements are not taken, take them
+        if(!movementInitTaken) {
+          if(patrolIndex >= MAX_PATROL_LENGTH) {
+            throwError("ERROR: Max patrol length reached");
+          }
+
+          movementInitTaken = true;
+          movementStartMillis = millis();
+          patrol[patrolIndex].startingDistance = distanceCm;
+          patrolIndex++;
         }
 
-        movementInitTaken = true;
-        movementStartMillis = millis();
-        patrol[patrolIndex].startingDistance = distanceCm;
-        patrolIndex++;
-      }
+        // If line has stopped, switch to state 2
+        if(lineTotal < LINE_THRESHOLD) {
+          // NOTE: MAY NEED TO STOP TO TAKE FINAL DISTANCE READING...
+          patrol[patrolIndex - 1].endingDistance = distanceCm;
+          patrol[patrolIndex - 1].length = millis() - movementStartMillis;
 
-      // If line has stopped, switch to state 2
-      if(lineTotal < LINE_THRESHOLD) {
-        // NOTE: MAY NEED TO STOP TO TAKE FINAL DISTANCE READING...
-        patrol[patrolIndex - 1].endingDistance = distanceCm;
-        patrol[patrolIndex - 1].length = millis() - movementStartMillis;
-
-        movementState = 2;
-        movementStartMillis = millis();
-        movementDuration = TURN_BACKUP_AMOUNT;
-        movementInitTaken = false;
-      } else // next statement
-
-      // If on track, go straight
-      if (linePosition > 1000 - ACCEPTABLE_DRIFT && linePosition < 1000 + ACCEPTABLE_DRIFT) {
-        sendDrive(FORWARD_SPEED, FORWARD_SPEED);
-      } else if (linePosition > 1000) { // Turn left
-        sendDrive(FORWARD_SPEED - CORRECTION_DRIFT, FORWARD_SPEED);
-      } else { // Turn right
-        sendDrive(FORWARD_SPEED, FORWARD_SPEED - CORRECTION_DRIFT);
-      }
-    }
-
-    // Back up until the time specified
-    if (movementState == 2) {
-      sendDrive(-FORWARD_SPEED, -FORWARD_SPEED);
-
-      // If backup complete, switch to turning mode
-      if (millis() > movementStartMillis + movementDuration) {
-        movementState = 3;
-        movementStartMillis = millis();
-        movementDuration = TURN_AMOUNT_90;
-        movementInitTaken = false;
-      }
-    }
-
-    // 90 deg turn right to check intersection directions
-    if (movementState == 3) {
-      sendDrive(TURN_SPEED, -TURN_SPEED);
-
-      // If turn complete, check for lines
-      if (millis() > movementStartMillis + movementDuration) {
-
-        /*
-        If a line is detected, the robot must make a 180 turn to continue on its
-        path. (Because the line sensor is behind the robots pivot point. So it
-        is behind the line.)
-         */
-
-        if(lineTotal > LINE_THRESHOLD) {
-          // The next turn is left, save in patrol
-          patrol[patrolIndex - 1].nextTurn = 0;
-
-          movementState = 4;
-          movementStartMillis = millis();
-          movementDuration = TURN_AMOUNT_180;
+          movementState = 2;
+          movementDuration = TURN_BACKUP_AMOUNT;
           movementInitTaken = false;
-        } else {
-          /*
-            If here:
-            need to make 180deg turn, ensure that a line is detected
-            then 180deg turn back and go forward.
+          movementWaitMillis = millis() + STATE_CHANGE_DELAY;
 
-            This is necessary to ensure that the end of the patrol has not been
-            reached.
+
+        } else // next statement
+
+        // If on track, go straight
+        if (linePosition > 1000 - ACCEPTABLE_DRIFT && linePosition < 1000 + ACCEPTABLE_DRIFT) {
+          sendDrive(FORWARD_SPEED, FORWARD_SPEED);
+        } else if (linePosition > 1000) { // Turn left
+          sendDrive(FORWARD_SPEED - CORRECTION_DRIFT, FORWARD_SPEED);
+        } else { // Turn right
+          sendDrive(FORWARD_SPEED, FORWARD_SPEED - CORRECTION_DRIFT);
+        }
+      }
+
+      // Back up until the time specified
+      if (movementState == 2) {
+
+        // Save starting millis time
+        if (!movementInitTaken) {
+          movementInitTaken = true;
+          movementStartMillis = millis();
+        }
+
+        sendDrive(-FORWARD_SPEED, -FORWARD_SPEED);
+
+        // If backup complete, switch to turning mode
+        if (millis() > movementStartMillis + movementDuration) {
+          movementState = 3;
+          movementDuration = TURN_AMOUNT_90;
+          movementInitTaken = false;
+          movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+        }
+      }
+
+      // 90 deg turn right to check intersection directions
+      if (movementState == 3) {
+
+        // Save starting millis time
+        if (!movementInitTaken) {
+          movementInitTaken = true;
+          movementStartMillis = millis();
+        }
+
+        sendDrive(TURN_SPEED, -TURN_SPEED);
+
+        // If turn complete, check for lines
+        if (millis() > movementStartMillis + movementDuration) {
+
+          /*
+          If a line is detected, the robot must make a 180 turn to continue on its
+          path. (Because the line sensor is behind the robots pivot point. So it
+          is behind the line.)
            */
 
-          movementState = 6;
-          movementStartMillis = millis();
-          movementDuration = TURN_AMOUNT_180;
-          movementInitTaken = false;
+          if(lineTotal > LINE_THRESHOLD) {
+            // The next turn is left, save in patrol
+            patrol[patrolIndex - 1].nextTurn = 0;
+
+            movementState = 4;
+            movementDuration = TURN_AMOUNT_180;
+            movementInitTaken = false;
+            movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+          } else {
+            /*
+              If here:
+              need to make 180deg turn, ensure that a line is detected
+              then 180deg turn back and go forward.
+
+              This is necessary to ensure that the end of the patrol has not been
+              reached.
+             */
+
+            movementState = 6;
+            movementDuration = TURN_AMOUNT_180;
+            movementInitTaken = false;
+            movementWaitMillis = millis() + STATE_CHANGE_DELAY;
 
 
-          // Continue on to next line
+            // Continue on to next line
 
-          // The next turn is right, save in patrol
-          patrol[patrolIndex - 1].nextTurn = 1;
+            // The next turn is right, save in patrol
+            patrol[patrolIndex - 1].nextTurn = 1;
 
-          movementState = 5;
-          movementStartMillis = millis();
-          movementDuration = FIND_LINE_DELAY;
-          movementInitTaken = false;
+            movementState = 5;
+            movementDuration = FIND_LINE_DELAY;
+            movementInitTaken = false;
+            movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+          }
         }
       }
-    }
 
-    // 180 deg turn, then continue on next line
-    if (movementState == 4) {
-      sendDrive(TURN_SPEED, -TURN_SPEED);
+      // 180 deg turn, then continue on next line
+      if (movementState == 4) {
+        // Save starting millis time
+        if (!movementInitTaken) {
+          movementInitTaken = true;
+          movementStartMillis = millis();
+        }
 
-      // If turn complete, continue forward onto next line
-      if (millis() > movementStartMillis + movementDuration) {
+        sendDrive(TURN_SPEED, -TURN_SPEED);
 
-        movementState = 1;
-        movementInitTaken = false;
+        // If turn complete, continue forward onto next line
+        if (millis() > movementStartMillis + movementDuration) {
 
-      }
-    }
-
-    // Move foward a brief amount to find the next line
-    if (movementState == 5) {
-      sendDrive(FORWARD_SPEED, FORWARD_SPEED);
-
-      // If forward complete, switch to next line following mode
-      if (millis() > movementStartMillis + movementDuration) {
-
-        // Check the line has been found in time
-        if (lineTotal > LINE_THRESHOLD) {
           movementState = 1;
           movementInitTaken = false;
-        } else {
-          // Throw error: LINE Lost
-          // TODO: Or end of patrol reached.
-          throwError("ERROR: Line lost. Program abort");
+          movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
         }
       }
-    }
 
-    // Make 180deg turn, check line is detected, then turn back and continue on mapping
-    if (movementState == 6) {
-      sendDrive(TURN_SPEED, -TURN_SPEED);
-
-      // If turn complete, continue forward onto next line
-      if (millis() > movementStartMillis + movementDuration) {
-
-        // Check the line has been found at end of turn
-        if (lineTotal > LINE_THRESHOLD) {
-          movementState = 4;
+      // Move foward a brief amount to find the next line
+      if (movementState == 5) {
+        // Save starting millis time
+        if (!movementInitTaken) {
+          movementInitTaken = true;
           movementStartMillis = millis();
-          movementDuration = TURN_AMOUNT_180;
-          movementInitTaken = false;
-        } else {
-          // Throw error: LINE Lost
-          // TODO: Or end of patrol reached.
-          throwError("ERROR: Patrol end reached, no futher instructions.");
         }
 
+        sendDrive(FORWARD_SPEED, FORWARD_SPEED);
+
+        // If forward complete, switch to next line following mode
+        if (millis() > movementStartMillis + movementDuration) {
+
+          // Check the line has been found in time
+          if (lineTotal > LINE_THRESHOLD) {
+            movementState = 1;
+            movementInitTaken = false;
+            movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+          } else {
+            // Throw error: LINE Lost
+            // TODO: Or end of patrol reached.
+            throwError("ERROR: Line lost. Program abort");
+          }
+        }
+      }
+
+      // Make 180deg turn, check line is detected, then turn back and continue on mapping
+      if (movementState == 6) {
+        // Save starting millis time
+        if (!movementInitTaken) {
+          movementInitTaken = true;
+          movementStartMillis = millis();
+        }
+
+
+        sendDrive(TURN_SPEED, -TURN_SPEED);
+
+        // If turn complete, continue forward onto next line
+        if (millis() > movementStartMillis + movementDuration) {
+
+          // Check the line has been found at end of turn
+          if (lineTotal > LINE_THRESHOLD) {
+            movementState = 4;
+            movementDuration = TURN_AMOUNT_180;
+            movementInitTaken = false;
+            movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+          } else {
+            // Throw error: LINE Lost
+            // TODO: Or end of patrol reached.
+            throwError("ERROR: Patrol end reached, no futher instructions.");
+          }
+
+        }
       }
     }
   }
@@ -643,4 +696,18 @@ void throwError(String message) {
   }
 
 
+}
+
+/*
+  Prints the patrol information to the lcd
+    DISTANCE  START Distance  END Distance
+    00000000  000             000
+ */
+void printPatrol() {
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.println("DISTANCE  START Distance  END Distance");
+  for(int i = 0; i < MAX_PATROL_LENGTH; i++) {
+    M5.Lcd.printf("%08d  %04d             %04d\n\r", patrol[i].length, patrol[i].startingDistance, patrol[i].endingDistance);
+  }
 }
