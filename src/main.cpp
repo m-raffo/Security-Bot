@@ -15,6 +15,23 @@
 #define ECHO_PIN     13
 #define MAX_DISTANCE 200
 
+// Define movement constants
+
+/////////////////////////////////////////
+// TEMPORARY VALUES: ADJUSTMENT NEEDED //
+/////////////////////////////////////////
+
+#define ACCEPTABLE_DRIFT    100
+#define CORRECTION_DRIFT    100
+#define TURN_BACKUP_AMOUNT  3200
+#define TURN_AMOUNT_90      1000
+#define TURN_AMOUNT_180     1000
+#define TURN_SPEED          8000
+#define FORWARD_SPEED       8000
+#define LINE_THRESHOLD      400
+#define FIND_LINE_DELAY     500
+
+
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
 // Define IMU variables
@@ -28,9 +45,32 @@ uint16_t lineSensorValues[qtrSensorCount];
 // Define leds
 CRGB leds[NUM_LEDS];
 
+// State machine variables
+
+/*
+  States:
+    0 - setup
+    1 - mapping
+ */
+int state = 0;
+
+/*
+  States:
+    0 - wait
+    1 - straight and follow line
+    2 - backing up
+    3 - turning (left)
+    4 - turning (right)
+ */
+int movementState = 1;
+int movementStartMillis = 0;
+int movementDuration;
+
 // Function prototypes
 boolean performChecks();
 boolean arrayCompare(int *a, int *b, int len_a, int len_b);
+void waitForButtonPress(String);
+void throwError(String);
 
 void setup() {
 
@@ -127,45 +167,128 @@ void setup() {
   M5.Lcd.setCursor(35, 20);
   M5.Lcd.println("Calibrating now...");
   float percent = 0;
-  for (uint8_t i = 0; i < 250; i++) {
-    percent += 100.0 / 250.0;
+  for (uint8_t i = 0; i < 100; i++) {
+    percent += 100.0 / 100.0;
     M5.Lcd.setCursor(35, 40);
     M5.Lcd.printf("%d%%", (int) percent);
 
 
     qtr.calibrate();
-    delay(20);
+    // delay(20);
   }
 
   M5.Lcd.clear(BLUE);
   delay(250);
   M5.Lcd.clear(BLACK);
 
+  waitForButtonPress("Press A to continue");
 
 }
 
 void loop() {
 
-  // Read line sensor values
+  ////////////////////////
+  // READ SENSOR VALUES //
+  ////////////////////////
+
   qtr.read(lineSensorValues);
 
-  // Display sonar pings
-  // M5.Lcd.clear(BLACK);
-  M5.Lcd.setCursor(10, 10);
-  M5.Lcd.printf("%03d", (int) sonar.ping_cm());
-
-  M5.Lcd.setCursor(0,25);
-  M5.Lcd.println("  3    2    1");
-  M5.Lcd.printf( "%4d %4d %4d", lineSensorValues[2], lineSensorValues[1], lineSensorValues[0]);
-
   int linePosition = qtr.readLineBlack(lineSensorValues);
-  M5.Lcd.setCursor(0,40);
-  M5.Lcd.println(" Line: ");
-  M5.Lcd.printf( "%4d ", linePosition);
+  int lineTotal = lineSensorValues[0] + lineSensorValues[1] + lineSensorValues[2];
 
+  ///////////////////
+  // MAPPING STATE //
+  ///////////////////
 
-  delay(50);
+  if (state == 1) {
 
+    // Go straight and correct direction
+    if (movementState == 1) {
+
+      // If line has stopped, switch to state 2
+      if(lineTotal < LINE_THRESHOLD) {
+        movementState = 2;
+        movementStartMillis = millis();
+        movementDuration = TURN_BACKUP_AMOUNT;
+      } else // next statement
+
+      // If on track, go straight
+      if (linePosition > 1000 - ACCEPTABLE_DRIFT && linePosition < 1000 + ACCEPTABLE_DRIFT) {
+        sendDrive(FORWARD_SPEED, FORWARD_SPEED);
+      } else if (linePosition > 1000) { // Turn left
+        sendDrive(FORWARD_SPEED - CORRECTION_DRIFT, FORWARD_SPEED);
+      } else { // Turn right
+        sendDrive(FORWARD_SPEED, FORWARD_SPEED - CORRECTION_DRIFT);
+      }
+    }
+
+    // Back up until the time specified
+    if (movementState == 2) {
+      sendDrive(-FORWARD_SPEED, -FORWARD_SPEED);
+
+      // If backup complete, switch to turning mode
+      if (millis() > movementStartMillis + movementDuration) {
+        movementState = 3;
+        movementStartMillis = millis();
+        movementDuration = TURN_AMOUNT_90;
+      }
+    }
+
+    // 90 deg turn right to check intersection directions
+    if (movementState == 3) {
+      sendDrive(TURN_SPEED, -TURN_SPEED);
+
+      // If turn complete, check for lines
+      if (millis() > movementStartMillis + movementDuration) {
+
+        /*
+        If a line is detected, the robot must make a 180 turn to continue on its
+        path. (Because the line sensor is behind the robots pivot point. So it
+        is behind the line.)
+         */
+
+        if(lineTotal > LINE_THRESHOLD) {
+          movementState = 4;
+          movementStartMillis = millis();
+          movementDuration = TURN_AMOUNT_180;
+        } else {
+          // Continue on to next line
+          movementState = 5;
+          movementStartMillis = millis();
+          movementDuration = FIND_LINE_DELAY;
+        }
+      }
+    }
+
+    // 180 deg turn, then continue on next line
+    if (movementState == 4) {
+      sendDrive(TURN_SPEED, -TURN_SPEED);
+
+      // If turn complete, continue forward onto next line
+      if (millis() > movementStartMillis + movementDuration) {
+
+        movementState = 1;
+
+      }
+    }
+
+    // Move foward a brief amount to find the next line
+    if (movementState == 5) {
+      sendDrive(FORWARD_SPEED, FORWARD_SPEED);
+
+      // If forward complete, switch to next line following mode
+      if (millis() > movementStartMillis + movementDuration) {
+
+        // Check the line has been found in time
+        if (lineTotal > LINE_THRESHOLD) {
+          movementState = 1;
+        } else {
+          // Throw error: LINE Lost
+          throwError("ERROR: Line lost. Program abort")
+        }
+      }
+    }
+  }
 
 }
 
@@ -219,6 +342,13 @@ boolean performChecks() {
   //   leds[i] = CRGB::Black;
   // }
 
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.println("Testing...");
+
+  M5.Lcd.print("QTR... ");
+
+
   // Get line sensor values
   qtr.read(qtrValues);
 
@@ -228,12 +358,19 @@ boolean performChecks() {
     qtrStatus = false;
   }
 
+  M5.Lcd.println("done");
+  M5.Lcd.print("Ultrasonic... ");
+
+
   // Ultrasonic sensor tests
   sonicValue = sonar.ping_cm();
   if(sonicValue == 0) {
     allGood = false;
     sonicStatus = false;
   }
+
+  M5.Lcd.println("done");
+  M5.Lcd.print("IMU... ");
 
 
   // Accel and gyro tests
@@ -282,11 +419,25 @@ boolean performChecks() {
     accelStatus = false;
   }
 
-  // Test motors
-  sendDrive(25, 25, 13000);
+  M5.Lcd.println("done");
+  M5.Lcd.print("Motors... ");
+
+  // Test motors - GRBL
+  // sendDrive(25, 25, 13000);
+  // delay(250);
+  // sendDrive(-25, -25, 13000);
+  // delay(300);
+
+  // Test motors - New nano firmware
+  sendDrive(5000, 5000);
   delay(250);
-  sendDrive(-25, -25, 13000);
-  delay(300);
+  sendDrive(-5000, -5000);
+  delay(250);
+  sendDrive(0, 0);
+
+
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(0, 0);
 
   // Display test results
   M5.Lcd.println("Sensor tests:");
@@ -358,4 +509,37 @@ boolean arrayCompare(int *a, int *b, int len_a, int len_b){
      // test each element to be the same. if not, return false
      for (n=0;n<len_a;n++) if (a[n]!=b[n]) return false;
      return true;
+}
+
+void waitForButtonPress(String message) {
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(35, 20);
+  M5.Lcd.println(message);
+
+  boolean wait = true;
+  while(wait) {
+    M5.update();
+    wait = !M5.BtnA.wasReleased();
+  }
+  M5.Lcd.clear(BLACK);
+}
+
+void throwError(String message) {
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setTextColor(RED, BLACK);
+
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.println(message);
+
+  while(true) {
+    if(millis() % 500 > 250) {
+      fill_solid(leds, NUM_LEDS, CRGB::Red);
+    } else {
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+    }
+
+    FastLED.show();
+  }
+
+
 }
