@@ -53,6 +53,7 @@ CRGB leds[NUM_LEDS];
   States:
     0 - setup
     1 - mapping
+    2 - patrol
  */
 int state = 0;
 unsigned long movementEndMillis = 0;
@@ -83,6 +84,10 @@ typedef struct {
   // The distance measured and the end of the line segment
   int endingDistance;
 
+  int backStartDistance;
+
+  int backEndDistance;
+
   /*
     The next turn for the robot:
     0 - left
@@ -97,6 +102,22 @@ typedef struct {
 Path patrol[MAX_PATROL_LENGTH];
 int patrolIndex = 0;
 int patrolLength = 0;
+
+/*
+Move states
+0 - moving straight
+1 - in turn
+ */
+int moveState = 0;
+
+/*
+Next turns:
+0 - left
+1 - right
+2 - 180 deg
+ */
+int nextTurn;
+
 
 // Function prototypes
 boolean performChecks();
@@ -246,6 +267,8 @@ void setup() {
 
   delay(2500);
 
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(0, 0);
 
 }
 
@@ -267,70 +290,132 @@ void loop() {
   ///////////////////////////
   // DISPLAY SENSOR VALUES //
   ///////////////////////////
-  M5.Lcd.clear(BLACK);
-  M5.Lcd.setCursor(0, 0);
-  M5.Lcd.println(linePosition);
-  M5.Lcd.println(movementEndMillis);
-  M5.Lcd.println(millis());
-  M5.Lcd.println(patrol[patrolCurrent].length);
+  // M5.Lcd.clear(BLACK);
+  // M5.Lcd.setCursor(0, 0);
+  // M5.Lcd.println(linePosition);
+  // M5.Lcd.println(movementEndMillis);
+  // M5.Lcd.println(millis());
+  // M5.Lcd.println(patrol[patrolCurrent].length);
 
-  /////////////////
-  // FOLLOW PATH //
-  /////////////////
-  if(!patrolBack) {
-    if(millis() > movementEndMillis) {
-      patrolCurrent += 1;
+  //////////////
+  // MAP PATH //
+  //////////////
 
+  if (state == 1) {
+    if(!patrolBack) {
+      if(millis() > movementEndMillis) {
+        if (moveState == 0) {
+          patrolCurrent += 1;
+          forwardCm(patrol[patrolCurrent].length, 8000);
+          M5.Lcd.println("Moving forward on path now!!");
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          moveState = 1;
+          switch (patrol[patrolCurrent].nextTurn) {
+            case 0:
+              nextTurn = 0;
+              break;
 
-      forwardCm(patrol[patrolCurrent].length, 8000);
+            case 1:
+              nextTurn = 1;
+              break;
 
-      movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+            case 2:
+              nextTurn = 2;
 
-      switch (patrol[patrolCurrent].nextTurn) {
-        case 0:
-          left90();
-          break;
-
-        case 1:
-          right90();
-          break;
-
-        case 2:
-          right180();
-          patrolBack = true;
-          break;
-      }
-    }
-  } else {
-    if(millis() > movementEndMillis) {
-
-
-
-      forwardCm(patrol[patrolCurrent].length, 8000);
-
-      movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
-
-      if(patrolCurrent > 0) {
-        switch (patrol[patrolCurrent - 1].nextTurn) {
-          case 0:
-            right90();
-            break;
-
-          case 1:
+              break;
+          }
+        } else if (moveState == 1) {
+          if (nextTurn == 0) {
             left90();
-            break;
+          } else if (nextTurn == 1) {
+            right90();
+          } else {
+            right180();
+            patrolBack = true;
+          }
 
+          movementEndMillis = millis() + 2000;
+          moveState = 0;
         }
-      } else {
-        right180();
-        patrolBack = false;
+
+      }
+    } else {
+      if(millis() > movementEndMillis) {
+        if (moveState == 0) {
+
+          forwardCm(patrol[patrolCurrent].length, 8000);
+          M5.Lcd.println("Moving backward on path now!!");
+
+
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          moveState = 1;
+
+          patrolCurrent -= 1;
+
+          if (patrolCurrent >= 0) {
+            switch (patrol[patrolCurrent].nextTurn) {
+              case 0:
+                nextTurn = 0;
+                break;
+
+              case 1:
+                nextTurn = 1;
+                break;
+
+            }
+          } else {
+            nextTurn = 2;
+
+          }
+
+
+        } else if (moveState == 1) {
+          if (nextTurn == 0) {
+            right90();
+          } else if (nextTurn == 1) {
+            left90();
+          } else {
+            right180();
+            patrolBack = false;
+          }
+
+
+
+          movementEndMillis = millis() + 2000;
+          moveState = 0;
+        }
+
       }
 
-      patrolCurrent -= 1;
 
-
+    //   if(millis() > movementEndMillis) {
+    //     forwardCm(patrol[patrolCurrent].length, 8000);
+    //
+    //     movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+    //
+    //     if(patrolCurrent > 0) {
+    //       switch (patrol[patrolCurrent - 1].nextTurn) {
+    //         case 0:
+    //           right90();
+    //           break;
+    //
+    //         case 1:
+    //           left90();
+    //           break;
+    //
+    //       }
+    //     } else {
+    //       right180();
+    //       patrolBack = false;
+    //     }
+    //
+    //     patrolCurrent -= 1;
+    //
+    //
+    //   }
     }
   }
+
 
 
   ////////////////
