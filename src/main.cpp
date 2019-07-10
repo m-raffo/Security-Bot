@@ -30,7 +30,7 @@
 #define FORWARD_SPEED       4000
 #define LINE_THRESHOLD      400
 #define FIND_LINE_DELAY     500
-#define MAX_PATROL_LENGTH   5
+#define MAX_PATROL_LENGTH   30
 #define STATE_CHANGE_DELAY  1000
 
 
@@ -70,7 +70,7 @@ boolean patrolBack = false;
   5 - Hazard lights (ie both blinkers)
   6 - Headlights (all on white)
  */
-int ledMode = 6;
+int ledMode = 5;
 
 // Patrol path storage structure
 typedef struct {
@@ -281,28 +281,53 @@ void loop() {
     if(millis() > movementEndMillis) {
       patrolCurrent += 1;
 
-      if (patrolCurrent > 0) {
+
+      forwardCm(patrol[patrolCurrent].length, 8000);
+
+      movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+
+      switch (patrol[patrolCurrent].nextTurn) {
+        case 0:
+          left90();
+          break;
+
+        case 1:
+          right90();
+          break;
+
+        case 2:
+          right180();
+          patrolBack = true;
+          break;
+      }
+    }
+  } else {
+    if(millis() > movementEndMillis) {
+
+
+
+      forwardCm(patrol[patrolCurrent].length, 8000);
+
+      movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+
+      if(patrolCurrent > 0) {
         switch (patrol[patrolCurrent - 1].nextTurn) {
           case 0:
-            left90();
-            break;
-
-          case 1:
             right90();
             break;
 
-          case 2:
-            right180();
-            patrolBack = true;
+          case 1:
+            left90();
             break;
+
         }
+      } else {
+        right180();
+        patrolBack = false;
       }
 
-      if (patrol[patrolCurrent - 1].nextTurn != 2) {
-        forwardCm(patrol[patrolCurrent].length, 8000);
-        movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+      patrolCurrent -= 1;
 
-      }
 
     }
   }
