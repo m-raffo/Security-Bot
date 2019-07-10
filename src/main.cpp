@@ -33,6 +33,7 @@
 #define MAX_PATROL_LENGTH   30
 #define STATE_CHANGE_DELAY  1000
 
+#define DISTANCE_TOLERANCE  5
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
@@ -50,11 +51,12 @@ CRGB leds[NUM_LEDS];
 // State machine variables
 
 /*
-  States:
-    0 - setup
-    1 - mapping
-    2 - patrol
- */
+States:
+0 - setup
+1 - mapping
+2 - patrol
+3 - alarm sounding
+*/
 int state = 0;
 unsigned long movementEndMillis = 0;
 int patrolCurrent = -1;
@@ -62,15 +64,15 @@ int patrolCurrent = -1;
 boolean patrolBack = false;
 
 /*
-  LED Modes:
-  0 - Off
-  1 - Scanning/search (yellow dot panning across the led strip)
-  2 - Flashing red and blue
-  3 - Left blinker
-  4 - Right blinker
-  5 - Hazard lights (ie both blinkers)
-  6 - Headlights (all on white)
- */
+LED Modes:
+0 - Off
+1 - Scanning/search (yellow dot panning across the led strip)
+2 - Flashing red and blue
+3 - Left blinker
+4 - Right blinker
+5 - Hazard lights (ie both blinkers)
+6 - Headlights (all on white)
+*/
 int ledMode = 5;
 
 // Patrol path storage structure
@@ -89,11 +91,11 @@ typedef struct {
   int backEndDistance;
 
   /*
-    The next turn for the robot:
-    0 - left
-    1 - right
-    2 - turn around - end of patrol
-   */
+  The next turn for the robot:
+  0 - left
+  1 - right
+  2 - turn around - end of patrol
+  */
   int nextTurn;
 } Path;
 
@@ -102,12 +104,14 @@ typedef struct {
 Path patrol[MAX_PATROL_LENGTH];
 int patrolIndex = 0;
 int patrolLength = 0;
+int nextDistanceMin;
+int nextDistanceMax;
 
 /*
 Move states
 0 - moving straight
 1 - in turn
- */
+*/
 int moveState = 0;
 
 /*
@@ -115,7 +119,7 @@ Next turns:
 0 - left
 1 - right
 2 - 180 deg
- */
+*/
 int nextTurn;
 
 
@@ -302,12 +306,16 @@ void loop() {
   //////////////
 
   if (state == 1) {
+    ledMode = 1;
     if(!patrolBack) {
       if(millis() > movementEndMillis) {
         if (moveState == 0) {
           patrolCurrent += 1;
           forwardCm(patrol[patrolCurrent].length, 8000);
           M5.Lcd.println("Moving forward on path now!!");
+
+          patrol[patrolCurrent].startingDistance = distanceCm;
+
           movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
           moveState = 1;
           switch (patrol[patrolCurrent].nextTurn) {
@@ -321,10 +329,10 @@ void loop() {
 
             case 2:
               nextTurn = 2;
-
               break;
           }
         } else if (moveState == 1) {
+          patrol[patrolCurrent].endingDistance = distanceCm;
           if (nextTurn == 0) {
             left90();
           } else if (nextTurn == 1) {
@@ -333,6 +341,8 @@ void loop() {
             right180();
             patrolBack = true;
           }
+
+
 
           movementEndMillis = millis() + 2000;
           moveState = 0;
@@ -344,6 +354,7 @@ void loop() {
         if (moveState == 0) {
 
           forwardCm(patrol[patrolCurrent].length, 8000);
+          patrol[patrolCurrent].backStartDistance = distanceCm;
           M5.Lcd.println("Moving backward on path now!!");
 
 
@@ -355,12 +366,12 @@ void loop() {
           if (patrolCurrent >= 0) {
             switch (patrol[patrolCurrent].nextTurn) {
               case 0:
-                nextTurn = 0;
-                break;
+              nextTurn = 0;
+              break;
 
               case 1:
-                nextTurn = 1;
-                break;
+              nextTurn = 1;
+              break;
 
             }
           } else {
@@ -370,6 +381,10 @@ void loop() {
 
 
         } else if (moveState == 1) {
+
+          patrol[patrolCurrent + 1].backEndDistance = distanceCm;
+
+
           if (nextTurn == 0) {
             right90();
           } else if (nextTurn == 1) {
@@ -377,6 +392,11 @@ void loop() {
           } else {
             right180();
             patrolBack = false;
+
+            state = 2;
+            printPatrol();
+
+
           }
 
 
@@ -387,35 +407,136 @@ void loop() {
 
       }
 
-
-    //   if(millis() > movementEndMillis) {
-    //     forwardCm(patrol[patrolCurrent].length, 8000);
-    //
-    //     movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
-    //
-    //     if(patrolCurrent > 0) {
-    //       switch (patrol[patrolCurrent - 1].nextTurn) {
-    //         case 0:
-    //           right90();
-    //           break;
-    //
-    //         case 1:
-    //           left90();
-    //           break;
-    //
-    //       }
-    //     } else {
-    //       right180();
-    //       patrolBack = false;
-    //     }
-    //
-    //     patrolCurrent -= 1;
-    //
-    //
-    //   }
     }
   }
 
+  ////////////
+  // PATROL //
+  ////////////
+  if (state == 2) {
+    ledMode = 5;
+    if(!patrolBack) {
+      if(millis() > movementEndMillis) {
+        if (moveState == 0) {
+          patrolCurrent += 1;
+          forwardCm(patrol[patrolCurrent].length, 8000);
+          M5.Lcd.println("Moving forward on path now!!");
+
+          nextDistanceMax = patrol[patrolCurrent].startingDistance;
+          nextDistanceMin = patrol[patrolCurrent].endingDistance;
+
+
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          moveState = 1;
+          switch (patrol[patrolCurrent].nextTurn) {
+            case 0:
+            nextTurn = 0;
+            break;
+
+            case 1:
+            nextTurn = 1;
+            break;
+
+            case 2:
+            nextTurn = 2;
+
+            break;
+          }
+        } else if (moveState == 1) {
+          if (nextTurn == 0) {
+            left90();
+          } else if (nextTurn == 1) {
+            right90();
+          } else {
+            right180();
+            patrolBack = true;
+          }
+
+
+
+          movementEndMillis = millis() + 2000;
+          moveState = 0;
+        }
+
+      } else if (moveState == 1) {
+        if (distanceCm > nextDistanceMax + DISTANCE_TOLERANCE || distanceCm < nextDistanceMin - DISTANCE_TOLERANCE) {
+          state = 3;
+        }
+      }
+    } else {
+      if(millis() > movementEndMillis) {
+        if (moveState == 0) {
+
+          forwardCm(patrol[patrolCurrent].length, 8000);
+          M5.Lcd.println("Moving backward on path now!!");
+
+          nextDistanceMax = patrol[patrolCurrent].backStartDistance;
+          nextDistanceMin = patrol[patrolCurrent].backEndDistance;
+
+
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          moveState = 1;
+
+          patrolCurrent -= 1;
+
+          if (patrolCurrent >= 0) {
+            switch (patrol[patrolCurrent].nextTurn) {
+              case 0:
+              nextTurn = 0;
+              break;
+
+              case 1:
+              nextTurn = 1;
+              break;
+
+            }
+          } else {
+            nextTurn = 2;
+
+          }
+
+
+        } else if (moveState == 1) {
+
+
+
+          if (nextTurn == 0) {
+            right90();
+          } else if (nextTurn == 1) {
+            left90();
+          } else {
+            right180();
+            patrolBack = false;
+
+            state = 2;
+            printPatrol();
+
+          }
+
+
+
+          movementEndMillis = millis() + 2000;
+          moveState = 0;
+        }
+
+      }  else if (moveState == 1) {
+        if (distanceCm > nextDistanceMax + DISTANCE_TOLERANCE || distanceCm < nextDistanceMin - DISTANCE_TOLERANCE) {
+          state = 3;
+        }
+      }
+
+    }
+  }
+
+  ////////////////////
+  // ALARM SOUNDING //
+  ////////////////////
+  if (state == 3) {
+    ledMode = 2;
+
+
+    // ALARM SOUND HERE
+  }
 
 
   ////////////////
@@ -498,27 +619,27 @@ void loop() {
 }
 
 /**
- * Checks all systems of the robot and prints the test results to the screen of
- * the robot.
- *
- * NOTE: All functions of the robot must be initialized before calling this function
- * This function checks the following functions:
- *   QTR Sensor
- *   Ultrasonic Sensor
- *   Accelerometer
- *   Gyroscope
- *
- * Magnetometer is not tested (assumed if accel and gyro is functional, mag is too)
- *
- * Sample output error message:
+* Checks all systems of the robot and prints the test results to the screen of
+* the robot.
+*
+* NOTE: All functions of the robot must be initialized before calling this function
+* This function checks the following functions:
+*   QTR Sensor
+*   Ultrasonic Sensor
+*   Accelerometer
+*   Gyroscope
+*
+* Magnetometer is not tested (assumed if accel and gyro is functional, mag is too)
+*
+* Sample output error message:
 
-     Sensor tests:
-     QTR - [SUCCESS] - (60, 49, 54)
-     Ultrasonic - [FAIL] - (0.0000000000)
-     ...
+Sensor tests:
+QTR - [SUCCESS] - (60, 49, 54)
+Ultrasonic - [FAIL] - (0.0000000000)
+...
 
- * @return true if all checks good, false if not
- */
+* @return true if all checks good, false if not
+*/
 boolean performChecks() {
   // Define test variables
   boolean allGood = true;
@@ -708,12 +829,12 @@ boolean performChecks() {
 }
 
 boolean arrayCompare(int *a, int *b, int len_a, int len_b){
-     int n;
-     // if their lengths are different, return false
-     if (len_a != len_b) return false;
-     // test each element to be the same. if not, return false
-     for (n=0;n<len_a;n++) if (a[n]!=b[n]) return false;
-     return true;
+  int n;
+  // if their lengths are different, return false
+  if (len_a != len_b) return false;
+  // test each element to be the same. if not, return false
+  for (n=0;n<len_a;n++) if (a[n]!=b[n]) return false;
+  return true;
 }
 
 void waitForButtonPress(String message) {
@@ -750,24 +871,24 @@ void throwError(String message) {
 }
 
 /*
-  Prints the patrol information to the lcd
-    DISTANCE  START Distance  END Distance
-    00000000  000             000
- */
+Prints the patrol information to the lcd
+DISTANCE  START Distance  END Distance
+00000000  000             000
+*/
 void printPatrol() {
   M5.Lcd.clear(BLACK);
   M5.Lcd.setCursor(0, 0);
-  M5.Lcd.println("DISTANCE  START Distance  END Distance");
+  M5.Lcd.println("DISTANCE  START  END  bSTART  bEND");
   for(int i = 0; i < MAX_PATROL_LENGTH; i++) {
-    M5.Lcd.printf("%08d  %04d             %04d\n\r", patrol[i].length, patrol[i].startingDistance, patrol[i].endingDistance);
+    M5.Lcd.printf("%08d  %04d   %04d %04d    %04d\n\r", patrol[i].length, patrol[i].startingDistance, patrol[i].endingDistance, patrol[i].backStartDistance, patrol[i].backEndDistance);
   }
 }
 
 /*
- 0 - Button A
- 1 - Button B
- 2 - Button C
- */
+0 - Button A
+1 - Button B
+2 - Button C
+*/
 int getButtonPress() {
   boolean good = true;
 
@@ -802,16 +923,16 @@ Path menuNextPath() {
     int choice = getButtonPress();
     switch (choice) {
       case 0:
-        distance += 10;
-        break;
+      distance += 10;
+      break;
 
       case 1:
-        distance -= 10;
-        break;
+      distance -= 10;
+      break;
 
       case 2:
-        finished = false;
-        break;
+      finished = false;
+      break;
     }
   }
 
