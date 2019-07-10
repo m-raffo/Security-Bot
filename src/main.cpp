@@ -21,17 +21,17 @@
 // TEMPORARY VALUES: ADJUSTMENT NEEDED //
 /////////////////////////////////////////
 
-#define ACCEPTABLE_DRIFT    100
+#define ACCEPTABLE_DRIFT    250
 #define CORRECTION_DRIFT    100
-#define TURN_BACKUP_AMOUNT  3200
-#define TURN_AMOUNT_90      1000
-#define TURN_AMOUNT_180     1000
+#define TURN_BACKUP_AMOUNT  2500
+#define TURN_AMOUNT_90      2800
+#define TURN_AMOUNT_180     2000
 #define TURN_SPEED          8000
-#define FORWARD_SPEED       8000
+#define FORWARD_SPEED       4000
 #define LINE_THRESHOLD      400
 #define FIND_LINE_DELAY     500
 #define MAX_PATROL_LENGTH   5
-#define STATE_CHANGE_DELAY  250
+#define STATE_CHANGE_DELAY  1000
 
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
@@ -232,6 +232,13 @@ void setup() {
   FastLED.setBrightness(100);
 
 
+  // TEST ONLY: START WITH 180deg turn
+  // movementState = 4;
+  // movementDuration = TURN_AMOUNT_180;
+  // movementInitTaken = false;
+  // movementWaitMillis = millis() + STATE_CHANGE_DELAY;
+
+
 }
 
 void loop() {
@@ -248,6 +255,14 @@ void loop() {
 
   // Read ultrasonic sensor values
   int distanceCm = sonar.ping_cm();
+
+  ///////////////////////////
+  // DISPLAY SENSOR VALUES //
+  ///////////////////////////
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.println(linePosition);
+  M5.Lcd.println(movementState);
 
 
   ///////////////////
@@ -279,8 +294,10 @@ void loop() {
         // If line has stopped, switch to state 2
         if(lineTotal < LINE_THRESHOLD) {
           // NOTE: MAY NEED TO STOP TO TAKE FINAL DISTANCE READING...
-          patrol[patrolIndex - 1].endingDistance = distanceCm;
-          patrol[patrolIndex - 1].length = millis() - movementStartMillis;
+          if(patrolIndex > 0) {
+            patrol[patrolIndex - 1].endingDistance = distanceCm;
+            patrol[patrolIndex - 1].length = millis() - movementStartMillis;
+          }
 
           movementState = 2;
           movementDuration = TURN_BACKUP_AMOUNT;
@@ -293,10 +310,14 @@ void loop() {
         // If on track, go straight
         if (linePosition > 1000 - ACCEPTABLE_DRIFT && linePosition < 1000 + ACCEPTABLE_DRIFT) {
           sendDrive(FORWARD_SPEED, FORWARD_SPEED);
+          ledMode = 5;
         } else if (linePosition > 1000) { // Turn left
           sendDrive(FORWARD_SPEED - CORRECTION_DRIFT, FORWARD_SPEED);
+          ledMode = 3;
         } else { // Turn right
           sendDrive(FORWARD_SPEED, FORWARD_SPEED - CORRECTION_DRIFT);
+          ledMode = 4;
+
         }
       }
 
@@ -385,6 +406,7 @@ void loop() {
         // Save starting millis time
         if (!movementInitTaken) {
           movementInitTaken = true;
+          movementDuration = TURN_AMOUNT_180;
           movementStartMillis = millis();
         }
 
@@ -392,6 +414,7 @@ void loop() {
 
         // If turn complete, continue forward onto next line
         if (millis() > movementStartMillis + movementDuration) {
+          sendDrive(0, 0);
 
           movementState = 1;
           movementInitTaken = false;
