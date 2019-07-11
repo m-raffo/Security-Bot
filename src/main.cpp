@@ -6,6 +6,12 @@
 #include "utility/MPU9250.h"
 #include "Drive.h"
 
+// Wifi includes
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiAP.h>
+#include <WiFiMulti.h>
+
 // Define led constants
 #define NEOPIXEL_PIN 1
 #define NUM_LEDS 7
@@ -47,6 +53,26 @@ uint16_t lineSensorValues[qtrSensorCount];
 
 // Define leds
 CRGB leds[NUM_LEDS];
+
+
+// Define Wifi variables
+const char *ssid = "Bot Wifi";
+const char *password = "password";
+String request;
+// True if this bot is the server, false if client
+boolean isServer = false;
+boolean wifiEnabled = true;
+// Wifi server
+WiFiServer server(80);
+// Wifi client
+WiFiMulti WiFiMulti;
+WiFiClient client;
+const uint16_t port = 80;         // defining port
+const char *host = "192.168.4.1"; // ip or dns
+String line;
+long int wifiRetry = millis();
+
+
 
 // State machine variables
 
@@ -164,7 +190,6 @@ void setup() {
   IMU.initMPU9250();
   IMU.initAK8963(IMU.magCalibration);
 
-
   M5.Lcd.clear(BLACK);
 
   boolean systemChecks = performChecks();
@@ -221,6 +246,31 @@ void setup() {
 
   }
 
+  // Initialize the wifi
+  if (isServer) {
+    // Start server:
+    WiFi.softAP(ssid, password);
+    IPAddress myIP = WiFi.softAPIP();
+
+    server.begin();
+  } else {
+    // Start client:
+    WiFiMulti.addAP(ssid, password);
+    M5.Lcd.clear(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.println("Waiting to connect to wifi...");
+    while(WiFiMulti.run() != WL_CONNECTED) {
+        Serial.print(".");
+        delay(500);
+    }
+
+    M5.Lcd.clear(GREEN);
+    delay(250);
+    M5.Lcd.clear(BLACK);
+
+  }
+
+
   M5.Lcd.setCursor(35, 20);
   M5.Lcd.println("Line sensor calibration: 'A' to begin");
 
@@ -274,7 +324,7 @@ void setup() {
 
   patrolLength = patrolIndex;
 
-  printPatrol();
+  // printPatrol();
 
 
   delay(2500);
@@ -308,6 +358,56 @@ void loop() {
   // M5.Lcd.println(movementEndMillis);
   // M5.Lcd.println(millis());
   // M5.Lcd.println(patrol[patrolCurrent].length);
+
+  ///////////////////
+  // GET WIFI DATA //
+  ///////////////////
+  if (wifiEnabled) {
+    if (isServer) {
+      WiFiClient client = server.available();
+      if (client) {
+        request = client.readStringUntil('\r');
+        if(request.equals("ALARM")) {
+          state = 3;
+          wifiEnabled = false;
+        }
+
+        if (state == 3) {
+          client.print("ALARM");
+        }
+      }
+    } else {
+      if (millis() > wifiRetry && state == 3) {
+
+        wifiRetry = millis() + 2000;
+        if (!client.connect(host, port)) {
+          Serial.println("Connection failed.");
+          Serial.println("Waiting 5 seconds before retrying...");
+        } else {
+          if (state == 3) {
+            client.print("ALARM");
+            M5.Lcd.println("Sending alarm");
+            wifiEnabled = false;
+
+          } else {
+            client.print("All clear");
+          }
+
+          String line = client.readStringUntil('\r');
+          if (line.equals("ALARM")) {
+            state = 3;
+            wifiEnabled = false;
+          }
+        }
+
+      } else {
+        wifiRetry = millis();
+      }
+
+
+    }
+  }
+
 
   //////////////
   // MAP PATH //
@@ -365,7 +465,7 @@ void loop() {
         lastCheckedDistanceMillis = millis();
         lastCheckedDistanceIndex++;
 
-        M5.Lcd.println("Distance record taken");
+        // M5.Lcd.println("Distance record taken");
 
       }
     } else {
@@ -415,7 +515,7 @@ void loop() {
             patrolBack = false;
 
             state = 2;
-            printPatrol();
+            // printPatrol();
 
 
           }
@@ -432,7 +532,7 @@ void loop() {
         lastCheckedDistanceMillis = millis();
         lastCheckedDistanceIndex++;
 
-        M5.Lcd.println("Distance record taken");
+        // M5.Lcd.println("Distance record taken");
 
       }
 
@@ -548,7 +648,7 @@ void loop() {
             patrolBack = false;
 
             state = 2;
-            printPatrol();
+            // printPatrol();
 
           }
 
@@ -577,7 +677,7 @@ void loop() {
   ////////////////////
   if (state == 3) {
     ledMode = 2;
-    void siren();
+    siren();
 
       // ALARM SOUND HERE
   }
@@ -1003,18 +1103,19 @@ Path menuNextPath() {
 }
 
 void siren(){
-  int NUM_HERTZ = 1245;
-  int NUM_HERTZLOW = 400;
-  for ( int _ = 0; _ < 2; _++) {
-    for(int i = 800; i < NUM_HERTZ; i = i + 2) {
-      M5.begin();
-      M5.Speaker.tone(i, 2);
-      delay(5);
-    }
-    for(int i = 1245; i > NUM_HERTZLOW; i = i - 2) {
-      M5.Speaker.tone(i, 2);
-      delay(5);
-    }
-  }
-  M5.Speaker.end();
+  return;
+  // int NUM_HERTZ = 1245;
+  // int NUM_HERTZLOW = 400;
+  // for ( int _ = 0; _ < 2; _++) {
+  //   for(int i = 800; i < NUM_HERTZ; i = i + 2) {
+  //     M5.begin();
+  //     M5.Speaker.tone(i, 2);
+  //     delay(5);
+  //   }
+  //   for(int i = 1245; i > NUM_HERTZLOW; i = i - 2) {
+  //     M5.Speaker.tone(i, 2);
+  //     delay(5);
+  //   }
+  // }
+  // M5.Speaker.end();
 }
