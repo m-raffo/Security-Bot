@@ -132,6 +132,8 @@ void printPatrol();
 int getButtonPress();
 Path menuNextPath();
 
+void siren();
+
 void setup() {
 
   M5.begin();
@@ -533,9 +535,9 @@ void loop() {
   ////////////////////
   if (state == 3) {
     ledMode = 2;
+    void siren();
 
-
-    // ALARM SOUND HERE
+      // ALARM SOUND HERE
   }
 
 
@@ -956,4 +958,26 @@ Path menuNextPath() {
 
 
   return nextPath;
+}
+
+void siren(){
+  M5.begin();
+  M5.update();
+  if (M5.BtnA.wasReleased());{
+    int NUM_HERTZ = 1245;
+    int NUM_HERTZLOW = 400;
+    for ( int _ = 0; _ < 2; _++)
+ {
+   for(int i = 800; i < NUM_HERTZ; i = i + 2){
+        M5.begin();
+        M5.Speaker.tone(i, 2);
+        delay(5);
+      }
+      for(int i = 1245; i > NUM_HERTZLOW; i = i - 2){
+        M5.Speaker.tone(i, 2);
+        delay(5);
+      }
+ }
+    M5.Speaker.end();
+  }
 }
