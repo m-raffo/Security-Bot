@@ -59,6 +59,7 @@ States:
 */
 int state = 0;
 unsigned long movementEndMillis = 0;
+unsigned long movementStartMillis;
 int patrolCurrent = -1;
 
 boolean patrolBack = false;
@@ -90,6 +91,9 @@ typedef struct {
 
   int backEndDistance;
 
+  int distances[50];
+  int endDistances[50];
+
   /*
   The next turn for the robot:
   0 - left
@@ -106,6 +110,8 @@ int patrolIndex = 0;
 int patrolLength = 0;
 int nextDistanceMin;
 int nextDistanceMax;
+int lastCheckedDistanceMillis;
+int lastCheckedDistanceIndex;
 
 /*
 Move states
@@ -229,8 +235,8 @@ void setup() {
   M5.Lcd.setCursor(35, 20);
   M5.Lcd.println("Calibrating now...");
   float percent = 0;
-  for (uint8_t i = 0; i < 100; i++) {
-    percent += 100.0 / 100.0;
+  for (uint8_t i = 0; i < 25; i++) {
+    percent += 25.0 / 100.0;
     M5.Lcd.setCursor(35, 40);
     M5.Lcd.printf("%d%%", (int) percent);
 
@@ -318,7 +324,10 @@ void loop() {
 
           patrol[patrolCurrent].startingDistance = distanceCm;
 
-          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          lastCheckedDistanceMillis = millis();
+          lastCheckedDistanceIndex = 0;
+
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2500;
           moveState = 1;
           switch (patrol[patrolCurrent].nextTurn) {
             case 0:
@@ -350,6 +359,14 @@ void loop() {
           moveState = 0;
         }
 
+      } else if(moveState == 1 && millis() > lastCheckedDistanceMillis + 100) {
+        // Record distances as the robot progresses
+        patrol[patrolCurrent].distances[lastCheckedDistanceIndex] = distanceCm;
+        lastCheckedDistanceMillis = millis();
+        lastCheckedDistanceIndex++;
+
+        M5.Lcd.println("Distance record taken");
+
       }
     } else {
       if(millis() > movementEndMillis) {
@@ -359,8 +376,10 @@ void loop() {
           patrol[patrolCurrent].backStartDistance = distanceCm;
           M5.Lcd.println("Moving backward on path now!!");
 
+          lastCheckedDistanceMillis = millis();
+          lastCheckedDistanceIndex = 0;
 
-          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
+          movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2500;
           moveState = 1;
 
           patrolCurrent -= 1;
@@ -407,6 +426,14 @@ void loop() {
           moveState = 0;
         }
 
+      } else if(moveState == 1 && millis() > lastCheckedDistanceMillis + 100) {
+        // Record distances as the robot progresses
+        patrol[patrolCurrent + 1].endDistances[lastCheckedDistanceIndex] = distanceCm;
+        lastCheckedDistanceMillis = millis();
+        lastCheckedDistanceIndex++;
+
+        M5.Lcd.println("Distance record taken");
+
       }
 
     }
@@ -426,6 +453,11 @@ void loop() {
 
           nextDistanceMax = patrol[patrolCurrent].startingDistance;
           nextDistanceMin = patrol[patrolCurrent].endingDistance;
+
+          movementStartMillis = millis();
+
+          lastCheckedDistanceMillis = millis();
+          lastCheckedDistanceIndex = 0;
 
 
           movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
@@ -464,6 +496,11 @@ void loop() {
         if (distanceCm > nextDistanceMax + DISTANCE_TOLERANCE || distanceCm < nextDistanceMin - DISTANCE_TOLERANCE) {
           state = 3;
         }
+
+        int targetDistance = patrol[patrolCurrent].distances[(int)(millis() - movementStartMillis) / 100];
+        if (distanceCm > targetDistance + DISTANCE_TOLERANCE || distanceCm < targetDistance - DISTANCE_TOLERANCE) {
+          state = 3;
+        }
       }
     } else {
       if(millis() > movementEndMillis) {
@@ -475,7 +512,7 @@ void loop() {
           nextDistanceMax = patrol[patrolCurrent].backStartDistance;
           nextDistanceMin = patrol[patrolCurrent].backEndDistance;
 
-
+          movementStartMillis = millis();
           movementEndMillis = millis() + millisTogoUnits(getUnitsCm(patrol[patrolCurrent].length), 8000) + 2000;
           moveState = 1;
 
@@ -525,6 +562,11 @@ void loop() {
         if (distanceCm > nextDistanceMax + DISTANCE_TOLERANCE || distanceCm < nextDistanceMin - DISTANCE_TOLERANCE) {
           state = 3;
         }
+
+        int targetDistance = patrol[patrolCurrent + 1].endDistances[(int)(millis() - movementStartMillis) / 100];
+        if (distanceCm > targetDistance + DISTANCE_TOLERANCE || distanceCm < targetDistance - DISTANCE_TOLERANCE) {
+          state = 3;
+        }
       }
 
     }
@@ -572,7 +614,7 @@ void loop() {
     }
   }
   else if (ledMode == 2) {
-    if (millis() % 500 < 250) {
+    if (millis() % 250 < 125) {
       fill_solid(leds, NUM_LEDS, CRGB::Red);
       leds[1] = CRGB::Blue;
       leds[3] = CRGB::Blue;
