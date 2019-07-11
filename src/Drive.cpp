@@ -3,6 +3,8 @@
 #define LEFT90            65
 #define RIGHT90           65
 #define STANDARD_FOWARD   15000
+#define T360              263
+#define T180              131
 
 void sendDrive(int left, int right, int speed) {
   Serial2.printf("$J = G21 G91 X%d Y%d F%d", left, right, speed);
@@ -18,7 +20,11 @@ void right90(){
 }
 
 void right180(){
-  sendDrive(RIGHT90 * 2, -RIGHT90 * 2, 8000);
+  sendDrive(T180, -T180, 8000);
+}
+
+void right360() {
+  sendDrive(T360, -T360, 8000);
 }
 
 void left90(int speed) {

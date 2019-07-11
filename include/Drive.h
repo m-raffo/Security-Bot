@@ -3,6 +3,8 @@ void sendDrive(int, int, int);
 void right90(int);
 void right90();
 
+void right360();
+
 void left90(int);
 void left90();
 
