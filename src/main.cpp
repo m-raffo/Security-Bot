@@ -60,7 +60,7 @@ const char *ssid = "Bot Wifi";
 const char *password = "password";
 String request;
 // True if this bot is the server, false if client
-boolean isServer = false;
+boolean isServer = true;
 boolean wifiEnabled = true;
 // Wifi server
 WiFiServer server(80);
@@ -71,6 +71,9 @@ const uint16_t port = 80;         // defining port
 const char *host = "192.168.4.1"; // ip or dns
 String line;
 long int wifiRetry = millis();
+long int lastSirenSound = millis();
+// True to communicate in a network, false to disable network
+boolean useWifi = true;
 
 
 
@@ -253,6 +256,17 @@ void setup() {
     IPAddress myIP = WiFi.softAPIP();
 
     server.begin();
+
+    M5.Lcd.clear(BLACK);
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.println("Waiting for connection on wifi...");
+    client = server.available();
+    while(!client) {
+      client = server.available();
+      delay(500);
+    }
+
+
   } else {
     // Start client:
     WiFiMulti.addAP(ssid, password);
@@ -267,6 +281,21 @@ void setup() {
     M5.Lcd.clear(GREEN);
     delay(250);
     M5.Lcd.clear(BLACK);
+
+
+
+    M5.Lcd.setCursor(0, 0);
+    M5.Lcd.println("Establishing communication");
+    while (!client.connect(host, port)) {
+      M5.Lcd.println("Connection failed.");
+      M5.Lcd.println("Waiting 5 seconds before retrying...");
+      delay(5000);
+    }
+
+    M5.Lcd.clear(GREEN);
+    delay(250);
+    M5.Lcd.clear(BLACK);
+
 
   }
 
@@ -364,45 +393,51 @@ void loop() {
   ///////////////////
   if (wifiEnabled) {
     if (isServer) {
-      WiFiClient client = server.available();
-      if (client) {
-        request = client.readStringUntil('\r');
+      // WiFiClient client = server.available();
+      if (client.available()) {
+        request = client.readStringUntil('\n');
         if(request.equals("ALARM")) {
+          M5.Lcd.println("Alarm triggered over wifi");
+          state = 3;
+          wifiEnabled = false;
+        } else {
+          M5.Lcd.println("ALL CLEAR over wifi");
+          M5.Lcd.println("all clear triggered alarm over wifi");
           state = 3;
           wifiEnabled = false;
         }
 
-        if (state == 3) {
-          client.print("ALARM");
-        }
+
+      }
+
+      if (state == 3) {
+        client.print("ALARM");
+        M5.Lcd.println("SENDING ALARM!");
+        wifiEnabled = false;
       }
     } else {
-      if (millis() > wifiRetry && state == 3) {
-
-        wifiRetry = millis() + 2000;
-        if (!client.connect(host, port)) {
-          Serial.println("Connection failed.");
-          Serial.println("Waiting 5 seconds before retrying...");
+      //TODO: Check if dis connected
+      if (client.available()) {
+        String line = client.readStringUntil('\n');
+        if (line.equals("ALARM")) {
+          M5.Lcd.println("Alarm triggered over wifi");
+          state = 3;
+          wifiEnabled = false;
         } else {
-          if (state == 3) {
-            client.print("ALARM");
-            M5.Lcd.println("Sending alarm");
-            wifiEnabled = false;
-
-          } else {
-            client.print("All clear");
-          }
-
-          String line = client.readStringUntil('\r');
-          if (line.equals("ALARM")) {
-            state = 3;
-            wifiEnabled = false;
-          }
+          M5.Lcd.println("all clear Alarm triggered over wifi");
+          state = 3;
+          wifiEnabled = false;
         }
 
-      } else {
-        wifiRetry = millis();
-      }
+      } else if (state == 3) {
+          client.println("ALARM");
+          M5.Lcd.println("Sending alarm");
+          wifiEnabled = false;
+
+        }
+
+
+
 
 
     }
@@ -773,6 +808,8 @@ void loop() {
 *   Accelerometer
 *   Gyroscope
 *
+* This test will only fail if necessary sensors are offline (ultrasonic),
+* but full test results will be displayed
 * Magnetometer is not tested (assumed if accel and gyro is functional, mag is too)
 *
 * Sample output error message:
@@ -824,7 +861,7 @@ boolean performChecks() {
 
   // Line sensor return 2500 when not plugged in
   if (qtrValues[0] == 2500 || qtrValues[1] == 2500 || qtrValues[2] == 2500) {
-    allGood = false;
+    // allGood = false;
     qtrStatus = false;
   }
 
@@ -874,17 +911,17 @@ boolean performChecks() {
   gyroValues2[2] = IMU.gyroCount[2];
 
   if (arrayCompare(accelValues1, accelValues2, 3, 3)) {
-    allGood = false;
+    // allGood = false;
     accelStatus = false;
   }
 
   if (arrayCompare(gyroValues1, gyroValues2, 3, 3)) {
-    allGood = false;
+    // allGood = false;
     gyroStatus = false;
   }
 
   if (arrayCompare(accelValues1, gyroValues1, 3, 3) || arrayCompare(accelValues2, gyroValues2, 3, 3)) {
-    allGood = false;
+    // allGood = false;
     gyroStatus = false;
     accelStatus = false;
   }
@@ -1103,19 +1140,8 @@ Path menuNextPath() {
 }
 
 void siren(){
-  return;
-  // int NUM_HERTZ = 1245;
-  // int NUM_HERTZLOW = 400;
-  // for ( int _ = 0; _ < 2; _++) {
-  //   for(int i = 800; i < NUM_HERTZ; i = i + 2) {
-  //     M5.begin();
-  //     M5.Speaker.tone(i, 2);
-  //     delay(5);
-  //   }
-  //   for(int i = 1245; i > NUM_HERTZLOW; i = i - 2) {
-  //     M5.Speaker.tone(i, 2);
-  //     delay(5);
-  //   }
-  // }
-  // M5.Speaker.end();
+  if (millis() > lastSirenSound) {
+    lastSirenSound = millis() + 1000;
+    M5.Speaker.tone(700, 500);
+  }
 }
