@@ -1,7 +1,7 @@
 # Security-Bot
 A security bot network for [M5Stack](https://m5stack.com/) and [TEC Bot 7.0](https://idea7.cc/project/tec-bot-7-0/)
 
-This system will allow multiple robots to patrol an area on paths set by black lines on the floor. The robots will sound an alarm if they detect any changes in their environment. Bluetooth connectivity will allow multiple robots to sound alarms simultaneously.
+This system will allow multiple robots to patrol an area on paths programmed by the user. The robots will sound an alarm if they detect any changes in their environment. Wifi connectivity will allow multiple robots to sound alarms simultaneously.
 
 ## Milestones:
 ### Overview
