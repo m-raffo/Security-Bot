@@ -21,12 +21,15 @@
 #define ECHO_PIN     13
 #define MAX_DISTANCE 200
 
+const String VERSION = "0.1.0";
+
 // Define movement constants
 
 /////////////////////////////////////////
 // TEMPORARY VALUES: ADJUSTMENT NEEDED //
 /////////////////////////////////////////
 
+// TODO: Some of the values are unused: should be removed
 #define ACCEPTABLE_DRIFT    250
 #define CORRECTION_DRIFT    100
 #define TURN_BACKUP_AMOUNT  2500
@@ -39,7 +42,7 @@
 #define MAX_PATROL_LENGTH   30
 #define STATE_CHANGE_DELAY  1000
 
-#define DISTANCE_TOLERANCE  5
+#define DISTANCE_TOLERANCE  10
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
@@ -56,8 +59,8 @@ CRGB leds[NUM_LEDS];
 
 
 // Define Wifi variables
-const char *ssid = "Bot Wifi";
-const char *password = "password";
+const char *ssid = "Security Bot WiFi";
+const char *password = "sisu7U0ec8oadysp";
 String request;
 // True if this bot is the server, false if client
 boolean isServer = true;
@@ -141,6 +144,13 @@ int nextDistanceMin;
 int nextDistanceMax;
 int lastCheckedDistanceMillis;
 int lastCheckedDistanceIndex;
+
+boolean sirenEnabled = true;
+
+// Display booleans
+boolean displayMappingState = false;
+boolean displayPatrolState = false;
+boolean displayAlarm = false;
 
 /*
 Move states
@@ -249,86 +259,163 @@ void setup() {
 
   }
 
-  // Initialize the wifi
-  if (isServer) {
-    // Start server:
-    WiFi.softAP(ssid, password);
-    IPAddress myIP = WiFi.softAPIP();
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  FastLED.show();
 
-    server.begin();
+  M5.Lcd.setTextSize(3);
+  M5.Lcd.setCursor(50,20);
+  M5.Lcd.print("Security Bot");
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setTextColor(WHITE, BLACK);
 
-    M5.Lcd.clear(BLACK);
-    M5.Lcd.setCursor(0, 0);
-    M5.Lcd.println("Waiting for connection on wifi...");
-    client = server.available();
-    while(!client) {
-      client = server.available();
-      delay(500);
-    }
+  M5.Lcd.setCursor(0, 150);
+  M5.Lcd.println("     A - WiFi Disabled");
+  M5.Lcd.println("     B - WiFi (Server)");
+  M5.Lcd.println("     C - WiFi (Client)");
 
+  M5.Lcd.setTextSize(1);
 
+  M5.Lcd.setCursor(120, 55);
+  M5.Lcd.println("Version: " + VERSION);
+
+  int choice = getButtonPress();
+  if (choice == 0) {
+    useWifi = false;
+  }
+  else if (choice == 1) {
+    // if press is B
+    isServer = true;
   } else {
-    // Start client:
-    WiFiMulti.addAP(ssid, password);
-    M5.Lcd.clear(BLACK);
-    M5.Lcd.setCursor(0, 0);
-    M5.Lcd.println("Waiting to connect to wifi...");
-    while(WiFiMulti.run() != WL_CONNECTED) {
-        Serial.print(".");
-        delay(500);
-    }
-
-    M5.Lcd.clear(GREEN);
-    delay(250);
-    M5.Lcd.clear(BLACK);
-
-
-
-    M5.Lcd.setCursor(0, 0);
-    M5.Lcd.println("Establishing communication");
-    while (!client.connect(host, port)) {
-      M5.Lcd.println("Connection failed.");
-      M5.Lcd.println("Waiting 5 seconds before retrying...");
-      delay(5000);
-    }
-
-    M5.Lcd.clear(GREEN);
-    delay(250);
-    M5.Lcd.clear(BLACK);
-
-
+    isServer = false;
   }
 
+  if (useWifi) {
+    // Initialize the wifi
+    if (isServer) {
+      // Start server:
+      WiFi.softAP(ssid, password);
+      IPAddress myIP = WiFi.softAPIP();
 
-  M5.Lcd.setCursor(35, 20);
-  M5.Lcd.println("Line sensor calibration: 'A' to begin");
+      server.begin();
+
+      // Display waiting for connection message
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setCursor(10, 10);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.println("Waiting for connection...");
+
+      M5.Lcd.setTextSize(1);
+      M5.Lcd.setCursor(10, 40);
+      M5.Lcd.println("Ensure the other robot is set to client mode and is in range");
+      client = server.available();
+
+      boolean isFading = true;
+      int currentFade = 100;
+      FastLED.setBrightness(100);
+      fill_solid(leds, NUM_LEDS, CRGB::Purple);
+
+
+      while(!client) {
+        client = server.available();
+
+        // NOTE: This if/else should take ~500ms to execute and give a nice led display
+        if (isFading) {
+          for (int _ = 0; _ < 100; _++) {
+            currentFade -= 1;
+            FastLED.setBrightness(currentFade);
+            FastLED.show();
+            delay(5);
+          }
+          isFading = false;
+        } else {
+          for (int _ = 0; _ < 100; _++) {
+            currentFade += 1;
+            FastLED.setBrightness(currentFade);
+            FastLED.show();
+            delay(5);
+          }
+          isFading = true;
+        }
+      }
+
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      FastLED.setBrightness(100);
+      FastLED.show();
+
+      M5.Lcd.clear(GREEN);
+      delay(250);
+      M5.Lcd.clear(BLACK);
+
+
+    } else {
+      // Start client:
+      WiFiMulti.addAP(ssid, password);
+
+      // Display waiting message
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setCursor(10, 10);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.println("Attempting to connect...");
+
+      M5.Lcd.setTextSize(1);
+      M5.Lcd.setCursor(10, 40);
+      M5.Lcd.println("Ensure the other robot is set to server mode and is in range");
+
+      boolean isFading = true;
+      int currentFade = 100;
+      FastLED.setBrightness(100);
+      fill_solid(leds, NUM_LEDS, CRGB::Purple);
+
+      while(WiFiMulti.run() != WL_CONNECTED) {
+        // NOTE: This if/else should take ~500ms to execute and give a nice led display
+        if (isFading) {
+          for (int _ = 0; _ < 100; _++) {
+            currentFade -= 1;
+            FastLED.setBrightness(currentFade);
+            FastLED.show();
+            delay(5);
+          }
+          isFading = false;
+        } else {
+          for (int _ = 0; _ < 100; _++) {
+            currentFade += 1;
+            FastLED.setBrightness(currentFade);
+            FastLED.show();
+            delay(5);
+          }
+          isFading = true;
+        }
+      }
+
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      FastLED.setBrightness(100);
+      FastLED.show();
+
+
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setCursor(10, 10);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.println("Joined network...");
+
+      M5.Lcd.setTextSize(1);
+      M5.Lcd.setCursor(10, 40);
+      M5.Lcd.println("Establishing communications across network...");
+
+      while (!client.connect(host, port)) {
+        M5.Lcd.println("Connection failed.");
+        M5.Lcd.println("Waiting 5 seconds before retrying...");
+        delay(5000);
+      }
+
+      M5.Lcd.clear(GREEN);
+      delay(250);
+      M5.Lcd.clear(BLACK);
+
+    }
+  }
+
 
   M5.update();
-  boolean wait = true;
-  while(wait) {
-    M5.update();
-    wait = !M5.BtnA.wasReleased();
-  }
-
-  M5.Lcd.clear(BLACK);
-  M5.Lcd.setCursor(35, 20);
-  M5.Lcd.println("Calibrating now...");
-  float percent = 0;
-  for (uint8_t i = 0; i < 25; i++) {
-    percent += 25.0 / 100.0;
-    M5.Lcd.setCursor(35, 40);
-    M5.Lcd.printf("%d%%", (int) percent);
-
-
-    qtr.calibrate();
-    // delay(20);
-  }
-
-  M5.Lcd.clear(BLUE);
-  delay(250);
-  M5.Lcd.clear(BLACK);
-
-  waitForButtonPress("Press A to continue");
 
   state = 1;
 
@@ -353,13 +440,41 @@ void setup() {
 
   patrolLength = patrolIndex;
 
-  // printPatrol();
+  choice = 1;
 
+  // Enable or disable the siren
+  M5.Lcd.clear(BLACK);
+  M5.Lcd.setCursor(70, 20);
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.println("Set audio alarm: ");
 
-  delay(2500);
+  M5.Lcd.setTextSize(2);
+
+  M5.Lcd.setCursor(50, 220);
+  M5.Lcd.println("On             Off");
+
+  while (choice == 1) {
+    choice = getButtonPress();
+  }
+
+  if (choice == 0) {
+    sirenEnabled = true;
+  } else {
+    sirenEnabled = false;
+  }
 
   M5.Lcd.clear(BLACK);
   M5.Lcd.setCursor(0, 0);
+
+  fill_solid(leds, NUM_LEDS, CRGB::Green);
+  FastLED.show();
+  delay(350);
+  // Give users a visual led countdown to the robot's start
+  for (int i = 0; i < 7; i++) {
+    leds[i] = CRGB::Black;
+    FastLED.show();
+    delay(350);
+  }
 
 }
 
@@ -370,76 +485,61 @@ void loop() {
   ////////////////////////
   M5.update();
 
-  // Read line sensor values
-  qtr.read(lineSensorValues);
-  int linePosition = qtr.readLineBlack(lineSensorValues);
-  int lineTotal = lineSensorValues[0] + lineSensorValues[1] + lineSensorValues[2];
+  // NOT NEEDE - Read line sensor values
+  // qtr.read(lineSensorValues);
+  // int linePosition = qtr.readLineBlack(lineSensorValues);
+  // int lineTotal = lineSensorValues[0] + lineSensorValues[1] + lineSensorValues[2];
 
   // Read ultrasonic sensor values
   int distanceCm = sonar.ping_cm();
 
-  ///////////////////////////
-  // DISPLAY SENSOR VALUES //
-  ///////////////////////////
-  // M5.Lcd.clear(BLACK);
-  // M5.Lcd.setCursor(0, 0);
-  // M5.Lcd.println(linePosition);
-  // M5.Lcd.println(movementEndMillis);
-  // M5.Lcd.println(millis());
-  // M5.Lcd.println(patrol[patrolCurrent].length);
-
   ///////////////////
   // GET WIFI DATA //
   ///////////////////
-  if (wifiEnabled) {
-    if (isServer) {
-      // WiFiClient client = server.available();
-      if (client.available()) {
-        request = client.readStringUntil('\n');
-        if(request.equals("ALARM")) {
-          M5.Lcd.println("Alarm triggered over wifi");
-          state = 3;
-          wifiEnabled = false;
-        } else {
-          M5.Lcd.println("ALL CLEAR over wifi");
-          M5.Lcd.println("all clear triggered alarm over wifi");
-          state = 3;
-          wifiEnabled = false;
+  if (useWifi) {
+    if (wifiEnabled) {
+      if (isServer) {
+        // WiFiClient client = server.available();
+        if (client.available()) {
+          request = client.readStringUntil('\n');
+          if(request.equals("ALARM")) {
+            // M5.Lcd.println("Alarm triggered over wifi");
+            state = 3;
+            wifiEnabled = false;
+          } else {
+            // M5.Lcd.println("ALL CLEAR over wifi");
+            // M5.Lcd.println("all clear triggered alarm over wifi");
+            state = 3;
+            wifiEnabled = false;
+          }
         }
 
+        if (state == 3) {
+          client.print("ALARM");
+          // M5.Lcd.println("SENDING ALARM!");
+          wifiEnabled = false;
+        }
+      } else {
+        //TODO: Check if dis connected
+        if (client.available()) {
+          String line = client.readStringUntil('\n');
+          if (line.equals("ALARM")) {
+            // M5.Lcd.println("Alarm triggered over wifi");
+            state = 3;
+            wifiEnabled = false;
+          } else {
+            // M5.Lcd.println("all clear Alarm triggered over wifi");
+            state = 3;
+            wifiEnabled = false;
+          }
 
+        } else if (state == 3) {
+            client.println("ALARM");
+            // M5.Lcd.println("Sending alarm");
+            wifiEnabled = false;
+
+          }
       }
-
-      if (state == 3) {
-        client.print("ALARM");
-        M5.Lcd.println("SENDING ALARM!");
-        wifiEnabled = false;
-      }
-    } else {
-      //TODO: Check if dis connected
-      if (client.available()) {
-        String line = client.readStringUntil('\n');
-        if (line.equals("ALARM")) {
-          M5.Lcd.println("Alarm triggered over wifi");
-          state = 3;
-          wifiEnabled = false;
-        } else {
-          M5.Lcd.println("all clear Alarm triggered over wifi");
-          state = 3;
-          wifiEnabled = false;
-        }
-
-      } else if (state == 3) {
-          client.println("ALARM");
-          M5.Lcd.println("Sending alarm");
-          wifiEnabled = false;
-
-        }
-
-
-
-
-
     }
   }
 
@@ -449,13 +549,26 @@ void loop() {
   //////////////
 
   if (state == 1) {
+
+    if (!displayMappingState) {
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setTextSize(3);
+      M5.Lcd.setCursor(37,20);
+      M5.Lcd.print("Mapping patrol");
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.setTextColor(WHITE, BLACK);
+
+
+      displayMappingState = true;
+    }
+
     ledMode = 1;
     if(!patrolBack) {
       if(millis() > movementEndMillis) {
         if (moveState == 0) {
           patrolCurrent += 1;
           forwardCm(patrol[patrolCurrent].length, 8000);
-          M5.Lcd.println("Moving forward on path now!!");
+          // M5.Lcd.println("Moving forward on path now!!");
 
           patrol[patrolCurrent].startingDistance = distanceCm;
 
@@ -509,7 +622,7 @@ void loop() {
 
           forwardCm(patrol[patrolCurrent].length, 8000);
           patrol[patrolCurrent].backStartDistance = distanceCm;
-          M5.Lcd.println("Moving backward on path now!!");
+          // M5.Lcd.println("Moving backward on path now!!");
 
           lastCheckedDistanceMillis = millis();
           lastCheckedDistanceIndex = 0;
@@ -567,8 +680,6 @@ void loop() {
         lastCheckedDistanceMillis = millis();
         lastCheckedDistanceIndex++;
 
-        // M5.Lcd.println("Distance record taken");
-
       }
 
     }
@@ -578,13 +689,24 @@ void loop() {
   // PATROL //
   ////////////
   if (state == 2) {
+    if (!displayPatrolState) {
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setTextSize(3);
+      M5.Lcd.setCursor(70,20);
+      M5.Lcd.print("Patrolling");
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.setTextColor(WHITE, BLACK);
+
+      displayPatrolState = true;
+    }
+
     ledMode = 5;
     if(!patrolBack) {
       if(millis() > movementEndMillis) {
         if (moveState == 0) {
           patrolCurrent += 1;
           forwardCm(patrol[patrolCurrent].length, 8000);
-          M5.Lcd.println("Moving forward on path now!!");
+          // M5.Lcd.println("Moving forward on path now!!");
 
           nextDistanceMax = patrol[patrolCurrent].startingDistance;
           nextDistanceMin = patrol[patrolCurrent].endingDistance;
@@ -642,7 +764,7 @@ void loop() {
         if (moveState == 0) {
 
           forwardCm(patrol[patrolCurrent].length, 8000);
-          M5.Lcd.println("Moving backward on path now!!");
+          // M5.Lcd.println("Moving backward on path now!!");
 
           nextDistanceMax = patrol[patrolCurrent].backStartDistance;
           nextDistanceMin = patrol[patrolCurrent].backEndDistance;
@@ -711,16 +833,26 @@ void loop() {
   // ALARM SOUNDING //
   ////////////////////
   if (state == 3) {
-    ledMode = 2;
-    siren();
 
-      // ALARM SOUND HERE
+    if (!displayAlarm) {
+      M5.Lcd.clear(BLACK);
+      M5.Lcd.setTextSize(3);
+      M5.Lcd.setCursor(75,20);
+      M5.Lcd.print("ALERT");
+
+      displayAlarm = true;
+    }
+
+    ledMode = 2;
+    if (sirenEnabled) {
+      siren();
+    }
   }
 
 
-  ////////////////
-  // LED MODES  //
-  ////////////////
+  ///////////////
+  // LED MODES //
+  ///////////////
   if (ledMode == 0) {
     fill_solid(leds, NUM_LEDS, CRGB::Black);
   }
@@ -1084,23 +1216,29 @@ int getButtonPress() {
       return 2;
     }
   }
+
+  // should never be here
+  return -1;
 }
 
 Path menuNextPath() {
   Path nextPath;
 
   M5.Lcd.clear(BLACK);
-  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setCursor(70, 20);
   M5.Lcd.setTextSize(2);
   M5.Lcd.println("Set distance: ");
 
-  M5.Lcd.setTextSize(1);
+  M5.Lcd.setTextSize(2);
+
+  M5.Lcd.setCursor(70, 220);
+  M5.Lcd.println("+      -      Next");
 
   boolean finished = true;
   int distance = 0;
   while (finished) {
-    M5.Lcd.setCursor(10, 30);
-    M5.Lcd.printf("%03d", distance);
+    M5.Lcd.setCursor(70, 60);
+    M5.Lcd.printf("%03d cm", distance);
     int choice = getButtonPress();
     switch (choice) {
       case 0:
@@ -1120,9 +1258,14 @@ Path menuNextPath() {
   nextPath.length = distance;
 
   M5.Lcd.clear(BLACK);
-  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setCursor(70, 20);
   M5.Lcd.setTextSize(2);
-  M5.Lcd.println("Set turn: ");
+  M5.Lcd.println("Set Turn: ");
+
+  M5.Lcd.setTextSize(2);
+
+  M5.Lcd.setCursor(50, 220);
+  M5.Lcd.println("Left   Done   Right");
 
   int choice = getButtonPress();
   if (choice == 0) {
